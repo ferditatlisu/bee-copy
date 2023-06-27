@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"github.com/segmentio/kafka-go"
 	"go.uber.org/zap"
-	"time"
 )
 
 type listenerHandler struct {
@@ -24,20 +23,22 @@ func NewListenerHandler(sd *model.CopyData, fromKafka service.CopyKafka, toKafka
 }
 
 func (l *listenerHandler) Handle() {
-	second := time.Duration(5)
-	sd := l.searchData.FinishTime.UnixMilli()
+	ctx := context.Background()
+	endDate := l.searchData.FinishTime.UnixMilli()
 	kc := l.from.CreateConsumer(l.searchData.FromTopic, l.partitionId)
+	lag, _ := kc.ReadLag(ctx)
 	kp := l.to.CreateProducer(l.searchData.ToTopic)
 	defer kc.Close()
-	ctx, cancel := context.WithCancel(context.Background())
-	t := time.AfterFunc(time.Second*second*2, func() {
-		cancel()
-	})
 	for {
-		m, err := kc.ReadMessage(ctx)
-		if err != nil || m.Time.UnixMilli() > sd {
+		if lag <= 0 {
 			break
 		}
+
+		m, err := kc.ReadMessage(ctx)
+		if err != nil || m.Time.UnixMilli() > endDate {
+			logger.Logger().Info(err.Error())
+		}
+		lag -= 1
 		err = l.publish(&m, kp, ctx)
 		if err != nil {
 			errMsg := fmt.Sprintf("publish error: %s", err.Error())
@@ -45,8 +46,6 @@ func (l *listenerHandler) Handle() {
 			logger.Logger().Error("error occurred when message publish", zap.Error(err))
 			return
 		}
-
-		t.Reset(time.Second * second)
 	}
 }
 
