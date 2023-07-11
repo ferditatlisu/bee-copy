@@ -1,4 +1,4 @@
-# Bee-API
+# Bee-Copy
 
 Base Path: https://github.com/ferditatlisu/bee
 
